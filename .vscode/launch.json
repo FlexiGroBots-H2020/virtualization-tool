@@ -1,0 +1,38 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "SVO export",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true, 
+            "args":[
+                "input/HD720_SN37655529_15-46-40.svo",
+                "output/videoLeft.avi",
+                "1"
+            ]
+        },
+        {
+            "name": "bckgrd",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true, 
+            "args":[
+                "--input",
+                "input/imgs_16seg/left*.png",
+                "--output",
+                "output/",
+                "--xdec_img_size", "1024",
+                "--vocabulary_xdec", "sky", "crop", "building", "tree", "car",
+                "--bckgrd_xdec", "sky", "building", "tree", "car"
+            ]
+        }
+    ]
+}

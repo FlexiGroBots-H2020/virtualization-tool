@@ -1,0 +1,8 @@
+# folders to ignore
+data/
+env/
+output/
+input/
+models/
+zed-examples/
+
