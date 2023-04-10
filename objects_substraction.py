@@ -8,7 +8,7 @@ import json
 from PIL import Image
 import cv2 
 
-from xdcoder_utils import semseg_single_im, load_xdecoder, get_parser
+from xdcoder_utils import refseg_single_im, load_xdecoder, get_parser
 from detectron2.utils.logger import setup_logger
 
 from detectron2.data import MetadataCatalog
@@ -39,7 +39,7 @@ def save_video_frames(video_path, output_dir, desired_fps=1):
             break
 
         if frame_count % frame_interval == 0:
-            frame_file = os.path.join(output_dir, f"{saved_count:04d}.png")
+            frame_file = os.path.join(output_dir, f"{saved_count:04d}.jpg")
             cv2.imwrite(frame_file, frame)
             saved_count += 1
 
@@ -95,7 +95,7 @@ if __name__ == "__main__":
         if not os.path.exists(images_path):
             os.makedirs(images_path)
         save_video_frames(video_path, images_path, desired_fps=5)
-        args.input = [images_path + "/*.png"]
+        args.input = [images_path + "/*.jpg"]
     
     # List all images to be proccessed
     list_images_paths = [] 
@@ -140,11 +140,12 @@ if __name__ == "__main__":
         img = Image.open(img_path).convert("RGB")
         img_ori_np = cv2.cvtColor(np.asarray(img),cv2.COLOR_BGR2RGB)
         
-        img_seg, img_bckgrd = semseg_single_im(img, transform, model, metadata, vocabulary_xdec, bckgrd_clss=list_bckgrd_clss)
-        out_img = cv2.bitwise_and(img_ori_np, img_ori_np, mask=img_bckgrd.cpu().numpy().astype('int8'))
+        _, _, img_seg = refseg_single_im(img, vocabulary_xdec, transform, model, metadata, output_folder, base_name, save=False, mask_crop=False)
+            
+        #out_img = cv2.bitwise_and(img_ori_np, img_ori_np, mask=img_seg.cpu().numpy().astype('int8'))
     
         cv2.imwrite(os.path.join(output_folder, "seg_"+ file_name), img_seg)
-        cv2.imwrite(os.path.join(output_folder, file_name), remove_background(out_img))
+        #cv2.imwrite(os.path.join(output_folder, file_name), remove_background(out_img))
     
     MetadataCatalog.remove('demo')
      

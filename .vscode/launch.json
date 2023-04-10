@@ -12,9 +12,22 @@
             "console": "integratedTerminal",
             "justMyCode": true, 
             "args":[
-                "input/HD720_SN37655529_15-46-40.svo",
-                "output/videoLeft.avi",
+                "input/mario_sample_6.svo",
+                "output/aquiles",
                 "1"
+            ]
+        },
+        {
+            "name": "SVO2nerfIN",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true, 
+            "args":[
+                "input/mario_sample_6.svo",
+                "output/aquiles",
+                "3"
             ]
         },
         {
@@ -26,12 +39,29 @@
             "justMyCode": true, 
             "args":[
                 "--input",
-                "input/imgs_16seg/left*.png",
+                "data/aquiles/images/*.png",
                 "--output",
                 "output/",
                 "--xdec_img_size", "1024",
-                "--vocabulary_xdec", "sky", "crop", "building", "tree", "car",
-                "--bckgrd_xdec", "sky", "building", "tree", "car"
+                "--vocabulary_xdec", "ground", "building", "chair", "wall", "sky",
+                "--bckgrd_xdec", "building", "wall", "sky", "ground"
+            ]
+        }
+        ,
+        {
+            "name": "objct",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true, 
+            "args":[
+                "--input",
+                "input/video_ofi.mp4",
+                "--output",
+                "output/",
+                "--xdec_img_size", "512",
+                "--vocabulary_xdec", "coffee.", "computer mouse.", "notepad."
             ]
         }
     ]

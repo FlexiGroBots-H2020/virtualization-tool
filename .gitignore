@@ -5,4 +5,7 @@ output/
 input/
 models/
 zed-examples/
-
+colmap_sparse/
+colmap_text/
+colmap/
+colmap.db

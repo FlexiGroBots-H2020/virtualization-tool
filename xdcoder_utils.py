@@ -388,6 +388,8 @@ def refseg_single_im(image_ori, text, transform, model, metadata, output_root, f
             out_img = cv2.cvtColor(np.asarray(image_ori), cv2.COLOR_BGR2RGB)
             fruit_zone= (0,0,out_img.shape[0],out_img.shape[1]) # top left down right
             print("No segmentation results")  
+            
+        
 
     return out_img, fruit_zone, cv2.cvtColor(img_out_overlay.get_image(), cv2.COLOR_BGR2RGB)
 
