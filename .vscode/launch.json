@@ -25,8 +25,8 @@
             "console": "integratedTerminal",
             "justMyCode": true, 
             "args":[
-                "input/mario_sample_6.svo",
-                "output/aquiles",
+                "input/vids_chema/out1.svo",
+                "output/vids_chema",
                 "3"
             ]
         },
@@ -39,12 +39,12 @@
             "justMyCode": true, 
             "args":[
                 "--input",
-                "data/aquiles/images/*.png",
+                "output/vids_chema/images/*.png",
                 "--output",
-                "output/",
-                "--xdec_img_size", "1024",
-                "--vocabulary_xdec", "ground", "building", "chair", "wall", "sky",
-                "--bckgrd_xdec", "building", "wall", "sky", "ground"
+                "output/vids_chema/images_full/",
+                "--xdec_img_size", "512",
+                "--vocabulary_xdec", "vine", "soil" ,"ground", "building", "road", "sky", 
+                "--bckgrd_xdec", "building", "background", "road", "sky",
             ]
         }
         ,
@@ -62,6 +62,44 @@
                 "output/",
                 "--xdec_img_size", "512",
                 "--vocabulary_xdec", "coffee.", "computer mouse.", "notepad."
+            ]
+        }
+        ,
+        {
+            "name": "colmap",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true, 
+            "args": [
+                "--video_in", "output/vids_chema/out1.avi", 
+                "--video_shape", "1920:1080",
+                "--video_fps", "4" ,
+                "--run_colmap", 
+                "--aabb_scale", "4", 
+                "--skip_early", "10"
+            ]
+        }
+        ,
+        {
+            "name": "3dv_pipeline",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true, 
+            "args": [
+                "--input", "input/vids_chema/out3.svo",
+                "--xdec_img_size", "1024",
+                "--vocabulary_xdec", "vine", "soil" ,"ground", "building", "road", "sky","grass", 
+                "--bckgrd_xdec", "building", "grass", "road", "sky", 
+                "--video_shape", "1920:1080",
+                "--video_fps", "4" ,
+                "--run_colmap", 
+                "--aabb_scale", "8", 
+                "--skip_early", "10",
+                "--overwrite"
             ]
         }
     ]

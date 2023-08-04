@@ -31,7 +31,7 @@ def add_frame_data(frames, file_path, sharpness, transform_matrix):
     
     
 def generate_transforms_json(zed_camera: sl.Camera, frame_data: dict, out_path):
-    calibration_params = zed_camera.get_camera_information().calibration_parameters
+    calibration_params = zed_camera.get_camera_information().camera_configuration.calibration_parameters
     left_cam = calibration_params.left_cam
     resolution = left_cam.image_size
 
@@ -111,7 +111,7 @@ def svo_to_transforms_json(input_svo, output_path, target_fps):
     runtime_parameters = sl.RuntimeParameters()
     
     # Calculate the frame skip factor
-    current_fps = zed.get_camera_information().camera_fps
+    current_fps = zed.get_camera_information().camera_configuration.fps
     skip_factor = round(current_fps / target_fps)
     print(f"original fps: {current_fps}, skip factor: {skip_factor}")
 

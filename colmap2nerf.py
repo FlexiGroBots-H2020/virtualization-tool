@@ -28,6 +28,7 @@ def parse_args():
 	parser = argparse.ArgumentParser(description="Convert a text colmap export to nerf format transforms.json; optionally convert video to images, and optionally run colmap in the first place.")
 
 	parser.add_argument("--video_in", default="", help="Run ffmpeg first to convert a provided video file into a set of images. Uses the video_fps parameter also.")
+	parser.add_argument("--video_shape", default="640:480", help="dimensions of full resolution video.")
 	parser.add_argument("--video_fps", default=2)
 	parser.add_argument("--time_slice", default="", help="Time (in seconds) in the format t1,t2 within which the images should be generated from the video. E.g.: \"--time_slice '10,300'\" will generate images only from 10th second to 300th second of the video.")
 	parser.add_argument("--run_colmap", action="store_true", help="run colmap first on the image folder")
@@ -44,7 +45,7 @@ def parse_args():
 	parser.add_argument("--vocab_path", default="", help="Vocabulary tree path.")
 	parser.add_argument("--overwrite", action="store_true", help="Do not ask for confirmation for overwriting existing images and COLMAP data.")
 	parser.add_argument("--mask_categories", nargs="*", type=str, default=[], help="Object categories that should be masked out from the training images. See `scripts/category2id.json` for supported categories.")
-	args = parser.parse_args()
+	args = parser.parse_known_args()
 	return args
 
 def do_system(arg):
@@ -73,7 +74,8 @@ def run_ffmpeg(args):
 		args.images = os.path.join(os.path.dirname(args.video_in), args.images)
 
 	images = "\"" + args.images + "\""
-	video =  "\"" + args.video_in + "\""
+	images_full = "\"" + args.images + "_full" + "\""
+	video =  "\"" + str(args.video_in) + "\""
 	fps = float(args.video_fps) or 1.0
 	print(f"running ffmpeg with input video file={video}, output image folder={images}, fps={fps}.")
 	if not args.overwrite and (input(f"warning! folder '{images}' will be deleted/replaced. continue? (Y/n)").lower().strip()+"y")[:1] != "y":
@@ -81,18 +83,23 @@ def run_ffmpeg(args):
 	try:
 		# Passing Images' Path Without Double Quotes
 		shutil.rmtree(args.images)
+		shutil.rmtree(args.images + "_full")
 	except:
 		pass
 	do_system(f"mkdir {images}")
+	do_system(f"mkdir {images_full}")
 
 	time_slice_value = ""
 	time_slice = args.time_slice
 	if time_slice:
 		start, end = time_slice.split(",")
 		time_slice_value = f",select='between(t\,{start}\,{end})'"
-	do_system(f"{ffmpeg_binary} -i {video} -qscale:v 1 -qmin 1 -vf \"fps={fps}{time_slice_value}\" {images}/%04d.png")
+	# save two folders, one in low resolution to calculate nerf and other to construct Nerf
+	do_system(f"{ffmpeg_binary} -i {video} -qscale:v 1 -qmin 1 -vf \"scale={args.video_shape},fps={fps}{time_slice_value}\" {images}/%04d.png")
+	do_system(f"{ffmpeg_binary} -i {video} -qscale:v 1 -qmin 1 -vf \"scale={args.video_shape},fps={fps}{time_slice_value}\" {images_full}/%04d.png")
+	return images_full, images
 
-def run_colmap(args):
+def run_colmap(args, exp_folder=""):
 	colmap_binary = "colmap"
 
 	# On Windows, if FFmpeg isn't found, try automatically downloading it from the internet
@@ -107,13 +114,13 @@ def run_colmap(args):
 		if candidates:
 			colmap_binary = candidates[0]
 
-	db = args.colmap_db
+	db = os.path.join(exp_folder,args.colmap_db)
 	images = "\"" + args.images + "\""
 	db_noext=str(Path(db).with_suffix(""))
 
 	if args.text=="text":
 		args.text=db_noext+"_text"
-	text=args.text
+	text=os.path.join(exp_folder,args.text)
 	sparse=db_noext+"_sparse"
 	print(f"running colmap with:\n\tdb={db}\n\timages={images}\n\tsparse={sparse}\n\ttext={text}")
 	if not args.overwrite and (input(f"warning! folders '{sparse}' and '{text}' will be deleted/replaced. continue? (Y/n)").lower().strip()+"y")[:1] != "y":
@@ -121,7 +128,7 @@ def run_colmap(args):
 	if os.path.exists(db):
 		os.remove(db)
 	do_system(f"{colmap_binary} feature_extractor --ImageReader.camera_model {args.colmap_camera_model} --ImageReader.camera_params \"{args.colmap_camera_params}\" --SiftExtraction.estimate_affine_shape=true --SiftExtraction.domain_size_pooling=true --ImageReader.single_camera 1 --database_path {db} --image_path {images}")
-	match_cmd = f"{colmap_binary} {args.colmap_matcher}_matcher --SiftMatching.guided_matching=true --database_path {db}"
+	match_cmd = f"xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' {colmap_binary} {args.colmap_matcher}_matcher --SiftMatching.guided_matching=true --database_path {db}"
 	if args.vocab_path:
 		match_cmd += f" --VocabTreeMatching.vocab_tree_path {args.vocab_path}"
 	do_system(match_cmd)
@@ -314,7 +321,7 @@ if __name__ == "__main__":
 				#name = str(PurePosixPath(Path(IMAGE_FOLDER, elems[9])))
 				# why is this requireing a relitive path while using ^
 				image_rel = os.path.relpath(IMAGE_FOLDER)
-				name = str(f"./{image_rel}/{'_'.join(elems[9:])}")
+				name = str(f"./{image_rel}_full/{'_'.join(elems[9:])}")
 				b = sharpness(name)
 				print(name, "sharpness=",b)
 				image_id = int(elems[0])
@@ -438,3 +445,258 @@ if __name__ == "__main__":
 			rgb_path = Path(frame['file_path'])
 			mask_name = str(rgb_path.parents[0] / Path('dynamic_mask_' + rgb_path.name.replace('.jpg', '.png')))
 			cv2.imwrite(mask_name, (output_mask*255).astype(np.uint8))
+
+def colmap2Nerf(video_path, exp_folder, resolution=0):
+	args, args_unknow = parse_args()
+	args.video_in = video_path
+	
+	if args.video_in != "":
+		if resolution != 0:
+			args.video_shape = resolution
+		path_out_full_imgs, path_out_imgs = run_ffmpeg(args)
+	if args.run_colmap:
+		run_colmap(args, exp_folder) # run colmap over the images with low resolution
+	AABB_SCALE = int(args.aabb_scale)
+	SKIP_EARLY = int(args.skip_early)
+	IMAGE_FOLDER = args.images
+	TEXT_FOLDER = os.path.join(exp_folder,args.text)
+	OUT_PATH = os.path.join(exp_folder, args.out)
+	print(f"outputting to {OUT_PATH}...")
+	with open(os.path.join(TEXT_FOLDER,"cameras.txt"), "r") as f:
+		angle_x = math.pi / 2
+		for line in f:
+			# 1 SIMPLE_RADIAL 2048 1536 1580.46 1024 768 0.0045691
+			# 1 OPENCV 3840 2160 3178.27 3182.09 1920 1080 0.159668 -0.231286 -0.00123982 0.00272224
+			# 1 RADIAL 1920 1080 1665.1 960 540 0.0672856 -0.0761443
+			if line[0] == "#":
+				continue
+			els = line.split(" ")
+			w = float(els[2])
+			h = float(els[3])
+			fl_x = float(els[4])
+			fl_y = float(els[4])
+			k1 = 0
+			k2 = 0
+			k3 = 0
+			k4 = 0
+			p1 = 0
+			p2 = 0
+			cx = w / 2
+			cy = h / 2
+			is_fisheye = False
+			if els[1] == "SIMPLE_PINHOLE":
+				cx = float(els[5])
+				cy = float(els[6])
+			elif els[1] == "PINHOLE":
+				fl_y = float(els[5])
+				cx = float(els[6])
+				cy = float(els[7])
+			elif els[1] == "SIMPLE_RADIAL":
+				cx = float(els[5])
+				cy = float(els[6])
+				k1 = float(els[7])
+			elif els[1] == "RADIAL":
+				cx = float(els[5])
+				cy = float(els[6])
+				k1 = float(els[7])
+				k2 = float(els[8])
+			elif els[1] == "OPENCV":
+				fl_y = float(els[5])
+				cx = float(els[6])
+				cy = float(els[7])
+				k1 = float(els[8])
+				k2 = float(els[9])
+				p1 = float(els[10])
+				p2 = float(els[11])
+			elif els[1] == "SIMPLE_RADIAL_FISHEYE":
+				is_fisheye = True
+				cx = float(els[5])
+				cy = float(els[6])
+				k1 = float(els[7])
+			elif els[1] == "RADIAL_FISHEYE":
+				is_fisheye = True
+				cx = float(els[5])
+				cy = float(els[6])
+				k1 = float(els[7])
+				k2 = float(els[8])
+			elif els[1] == "OPENCV_FISHEYE":
+				is_fisheye = True
+				fl_y = float(els[5])
+				cx = float(els[6])
+				cy = float(els[7])
+				k1 = float(els[8])
+				k2 = float(els[9])
+				k3 = float(els[10])
+				k4 = float(els[11])
+			else:
+				print("Unknown camera model ", els[1])
+			# fl = 0.5 * w / tan(0.5 * angle_x);
+			angle_x = math.atan(w / (fl_x * 2)) * 2
+			angle_y = math.atan(h / (fl_y * 2)) * 2
+			fovx = angle_x * 180 / math.pi
+			fovy = angle_y * 180 / math.pi
+
+	print(f"camera:\n\tres={w,h}\n\tcenter={cx,cy}\n\tfocal={fl_x,fl_y}\n\tfov={fovx,fovy}\n\tk={k1,k2} p={p1,p2} ")
+
+	with open(os.path.join(TEXT_FOLDER,"images.txt"), "r") as f:
+		i = 0
+		bottom = np.array([0.0, 0.0, 0.0, 1.0]).reshape([1, 4])
+		out = {
+			"camera_angle_x": angle_x,
+			"camera_angle_y": angle_y,
+			"fl_x": fl_x,
+			"fl_y": fl_y,
+			"k1": k1,
+			"k2": k2,
+			"k3": k3,
+			"k4": k4,
+			"p1": p1,
+			"p2": p2,
+			"is_fisheye": is_fisheye,
+			"cx": cx,
+			"cy": cy,
+			"w": w,
+			"h": h,
+			"aabb_scale": AABB_SCALE,
+			"frames": [],
+		}
+
+		up = np.zeros(3)
+		for line in f:
+			line = line.strip()
+			if line[0] == "#":
+				continue
+			i = i + 1
+			if i < SKIP_EARLY*2:
+				continue
+			if  i % 2 == 1:
+				elems=line.split(" ") # 1-4 is quat, 5-7 is trans, 9ff is filename (9, if filename contains no spaces)
+				#name = str(PurePosixPath(Path(IMAGE_FOLDER, elems[9])))
+				# why is this requireing a relitive path while using ^
+				image_rel = os.path.relpath(IMAGE_FOLDER)
+				name = str(f"./{image_rel}_full/{'_'.join(elems[9:])}")
+				b = sharpness(name)
+				print(name, "sharpness=",b)
+				image_id = int(elems[0])
+				qvec = np.array(tuple(map(float, elems[1:5])))
+				tvec = np.array(tuple(map(float, elems[5:8])))
+				R = qvec2rotmat(-qvec)
+				t = tvec.reshape([3,1])
+				m = np.concatenate([np.concatenate([R, t], 1), bottom], 0)
+				c2w = np.linalg.inv(m)
+				if not args.keep_colmap_coords:
+					c2w[0:3,2] *= -1 # flip the y and z axis
+					c2w[0:3,1] *= -1
+					c2w = c2w[[1,0,2,3],:]
+					c2w[2,:] *= -1 # flip whole world upside down
+
+					up += c2w[0:3,1]
+
+				name_rel = name.replace(exp_folder, '')
+				frame = {"file_path":name_rel,"sharpness":b,"transform_matrix": c2w}
+				out["frames"].append(frame)
+	nframes = len(out["frames"])
+
+	if args.keep_colmap_coords:
+		flip_mat = np.array([
+			[1, 0, 0, 0],
+			[0, -1, 0, 0],
+			[0, 0, -1, 0],
+			[0, 0, 0, 1]
+		])
+
+		for f in out["frames"]:
+			f["transform_matrix"] = np.matmul(f["transform_matrix"], flip_mat) # flip cameras (it just works)
+	else:
+		# don't keep colmap coords - reorient the scene to be easier to work with
+
+		up = up / np.linalg.norm(up)
+		print("up vector was", up)
+		R = rotmat(up,[0,0,1]) # rotate up vector to [0,0,1]
+		R = np.pad(R,[0,1])
+		R[-1, -1] = 1
+
+		for f in out["frames"]:
+			f["transform_matrix"] = np.matmul(R, f["transform_matrix"]) # rotate up to be the z axis
+
+		# find a central point they are all looking at
+		print("computing center of attention...")
+		totw = 0.0
+		totp = np.array([0.0, 0.0, 0.0])
+		for f in out["frames"]:
+			mf = f["transform_matrix"][0:3,:]
+			for g in out["frames"]:
+				mg = g["transform_matrix"][0:3,:]
+				p, w = closest_point_2_lines(mf[:,3], mf[:,2], mg[:,3], mg[:,2])
+				if w > 0.00001:
+					totp += p*w
+					totw += w
+		if totw > 0.0:
+			totp /= totw
+		print(totp) # the cameras are looking at totp
+		for f in out["frames"]:
+			f["transform_matrix"][0:3,3] -= totp
+
+		avglen = 0.
+		for f in out["frames"]:
+			avglen += np.linalg.norm(f["transform_matrix"][0:3,3])
+		avglen /= nframes
+		print("avg camera distance from origin", avglen)
+		for f in out["frames"]:
+			f["transform_matrix"][0:3,3] *= 4.0 / avglen # scale to "nerf sized"
+
+	for f in out["frames"]:
+		f["transform_matrix"] = f["transform_matrix"].tolist()
+	print(nframes,"frames")
+	print(f"writing {OUT_PATH}")
+	with open(OUT_PATH, "w") as outfile:
+		json.dump(out, outfile, indent=2)
+
+	if len(args.mask_categories) > 0:
+		# Check if detectron2 is installed. If not, install it.
+		try:
+			import detectron2
+		except ModuleNotFoundError:
+			try:
+				import torch
+			except ModuleNotFoundError:
+				print("PyTorch is not installed. For automatic masking, install PyTorch from https://pytorch.org/")
+				sys.exit(1)
+
+			input("Detectron2 is not installed. Press enter to install it.")
+			import subprocess
+			package = 'git+https://github.com/facebookresearch/detectron2.git'
+			subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+			import detectron2
+
+		import torch
+		from pathlib import Path
+		from detectron2.config import get_cfg
+		from detectron2 import model_zoo
+		from detectron2.engine import DefaultPredictor
+
+		category2id = json.load(open(SCRIPTS_FOLDER / "category2id.json", "r"))
+		mask_ids = [category2id[c] for c in args.mask_categories]
+
+		cfg = get_cfg()
+		# Add project-specific config (e.g., TensorMask) here if you're not running a model in detectron2's core library
+		cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
+		cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
+		# Find a model from detectron2's model zoo.
+		cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
+		predictor = DefaultPredictor(cfg)
+
+		for frame in out['frames']:
+			img = cv2.imread(frame['file_path'])
+			outputs = predictor(img)
+
+			output_mask = np.zeros((img.shape[0], img.shape[1]))
+			for i in range(len(outputs['instances'])):
+				if outputs['instances'][i].pred_classes.cpu().numpy()[0] in mask_ids:
+					pred_mask = outputs['instances'][i].pred_masks.cpu().numpy()[0]
+					output_mask = np.logical_or(output_mask, pred_mask)
+
+			rgb_path = Path(frame['file_path'])
+			mask_name = str(rgb_path.parents[0] / Path('dynamic_mask_' + rgb_path.name.replace('.jpg', '.png')))
+			cv2.imwrite(mask_name, (output_mask*255).astype(np.uint8))
+	return OUT_PATH, path_out_full_imgs

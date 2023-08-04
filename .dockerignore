@@ -1,0 +1,8 @@
+#folders to be ignored
+**/input/
+**/output/
+**/.git/
+**/tests/
+**/data/
+**/f2-nerf/
+**/f2-nerf/

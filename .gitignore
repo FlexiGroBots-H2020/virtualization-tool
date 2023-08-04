@@ -9,3 +9,5 @@ colmap_sparse/
 colmap_text/
 colmap/
 colmap.db
+chema/
+f2-nerf/
